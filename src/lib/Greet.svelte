@@ -9,6 +9,10 @@
     greetMsg = await invoke("greet", { name });
   }
 
+  async function connectOverlay() {
+    await invoke("connect_overlay");
+  }
+
   async function listen() {
     await invoke("listen");
   }
@@ -20,5 +24,6 @@
     <button type="submit">Greet</button>
   </form>
   <p>{greetMsg}</p>
-  <button on:click={listen}> Listen </button>
+  <button on:click={listen}> Connect to Game </button>
+  <button on:click={connectOverlay}> Connect to Server </button>
 </div>
