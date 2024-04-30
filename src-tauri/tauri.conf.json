@@ -6,7 +6,7 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "cc-celeste-bridge",
+    "productName": "Crowd Control Celeste Bridge",
     "version": "0.0.0"
   },
   "tauri": {
@@ -30,7 +30,7 @@
     "bundle": {
       "active": true,
       "targets": "all",
-      "identifier": "com.tauri.dev",
+      "identifier": "com.oneirocosm.cc-celeste-bridge",
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
