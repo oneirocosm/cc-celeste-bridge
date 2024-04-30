@@ -4,7 +4,7 @@ use tokio_websockets::ClientBuilder;
 
 #[tauri::command]
 pub async fn connect_overlay() -> Result<(), String> {
-    let uri = Uri::from_static("ws://127.0.0.1:3000?token=");
+    let uri = Uri::from_static("ws://127.0.0.1:3000?token=QWMuZUF");
     let (mut client, _) = ClientBuilder::from_uri(uri)
         .connect()
         .await

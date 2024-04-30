@@ -13,10 +13,12 @@ mod overlay_ws_conn;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet])
-        .invoke_handler(tauri::generate_handler![mod_tcp_conn::connect])
-        .invoke_handler(tauri::generate_handler![mod_tcp_conn::listen])
-        .invoke_handler(tauri::generate_handler![overlay_ws_conn::connect_overlay])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            mod_tcp_conn::connect,
+            mod_tcp_conn::listen,
+            overlay_ws_conn::connect_overlay
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 
