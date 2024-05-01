@@ -5,11 +5,30 @@
 </script>
 
 <main class="container">
-  <h1>Welcome to Tauri!</h1>
+  <h1>Crowd Control Celeste Bridge</h1>
 
-  <ServerConnectionStatus />
-  <GameConnectionStatus />
+  <div class="controls">
+    <ServerConnectionStatus />
+    <GameConnectionStatus />
+  </div>
 </main>
 
 <style>
+  h1 {
+    font-size: 3rem;
+    line-height: 3rem;
+    font-family: Audiowide;
+    text-transform: uppercase;
+    transform: skew(-10deg, 0deg);
+    color: var(--color-moonshot-core-yellow);
+  }
+
+  .controls {
+    width: 80%;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-left: auto;
+    margin-right: auto;
+  }
 </style>
