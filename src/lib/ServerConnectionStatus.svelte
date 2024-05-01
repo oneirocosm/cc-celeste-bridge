@@ -52,6 +52,10 @@
         color: var(--color-moonshot-core-yellow);
     }
 
+    input {
+        overflow-x: hidden;
+    }
+
     .inner-content-row {
         display: flex;
         flex-direction: row;

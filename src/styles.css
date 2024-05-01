@@ -25,13 +25,17 @@
   --color-moonshot-extra-gold: #FFC022;
 }
 
+body {
+  min-width: 400px;
+}
+
 .container {
   margin: 0;
-  padding-top: 10vh;
   display: flex;
   flex-direction: column;
   justify-content: center;
   text-align: center;
+  width: 98%;
 }
 
 .logo {
