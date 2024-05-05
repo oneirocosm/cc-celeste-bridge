@@ -1,5 +1,5 @@
-use futures_util::StreamExt;
 use http::Uri;
+use tokio_stream::StreamExt;
 use tokio_websockets::ClientBuilder;
 
 #[tauri::command]

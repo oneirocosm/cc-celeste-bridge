@@ -4,6 +4,7 @@
     let playerScreenUrl = "";
     let errorMsg = "";
     let errorTimeout: ReturnType<typeof setTimeout>;
+    let connectState = "disconnected";
     const noError = "todo";
 
     async function connectOverlay() {
@@ -14,7 +15,19 @@
             );
             return;
         }
-        await invoke("connect_overlay", { invokeMessage: playerScreenUrl });
+        connectState = "connecting";
+
+        await invoke("ws_connect", { invokeMessage: playerScreenUrl }).then(
+            () => {
+                connectState = "connected";
+            },
+        );
+    }
+
+    async function disconnectOverlay() {
+        connectState = "disconnecting";
+        await invoke("ws_disconnect");
+        connectState = "disconnected";
     }
 
     async function setErrorMsg(msg: string, timeoutMs: number) {
@@ -35,12 +48,40 @@
         <p>{errorMsg}</p>
     </div>
     <div class="inner-content-row user-input">
-        <input
-            id="player-screen-url-input"
-            placeholder="Enter your vdo ninja url"
-            bind:value={playerScreenUrl}
-        />
-        <button on:click={connectOverlay}> Connect to Server </button>
+        {#if connectState === "disconnected"}
+            <input
+                id="player-screen-url-input"
+                placeholder="Enter your vdo ninja url"
+                bind:value={playerScreenUrl}
+            />
+            <button on:click={connectOverlay}> Connect to Server </button>
+        {:else if connectState === "connected"}
+            <input
+                id="player-screen-url-input"
+                placeholder="Enter your vdo ninja url"
+                bind:value={playerScreenUrl}
+                disabled
+            />
+            <button on:click={disconnectOverlay}> Disconnect Server </button>
+        {:else if connectState === "connecting"}
+            <input
+                id="player-screen-url-input"
+                placeholder="Enter your vdo ninja url"
+                bind:value={playerScreenUrl}
+                disabled
+            />
+            <button on:click={disconnectOverlay}> Cancel Connection </button>
+        {:else}
+            <input
+                id="player-screen-url-input"
+                placeholder="Enter your vdo ninja url"
+                bind:value={playerScreenUrl}
+                disabled
+            />
+            <button on:click={disconnectOverlay} disabled>
+                Disconnecting ...
+            </button>
+        {/if}
     </div>
 </div>
 
