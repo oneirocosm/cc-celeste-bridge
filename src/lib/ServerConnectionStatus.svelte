@@ -1,5 +1,6 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/tauri";
+    import parse from "url-parse";
 
     let playerScreenUrl = "";
     let errorMsg = "";
@@ -8,7 +9,9 @@
     const noError = "todo";
 
     async function connectOverlay() {
-        if (!playerScreenUrl.includes("?push=")) {
+        const url = parse(playerScreenUrl, true);
+        const token = url.query.push ?? "";
+        if (token === "") {
             setErrorMsg(
                 "please enter your vdo url (from your web broser) before connecting",
                 2000,
@@ -17,11 +20,11 @@
         }
         connectState = "connecting";
 
-        await invoke("ws_connect", { invokeMessage: playerScreenUrl }).then(
-            () => {
+        await invoke("ws_connect", { token: token })
+            .then(() => {
                 connectState = "connected";
-            },
-        );
+            })
+            .catch((e) => console.log(e));
     }
 
     async function disconnectOverlay() {

@@ -12,13 +12,16 @@ tauri-build = { version = "1", features = [] }
 
 [dependencies]
 
+futures = "0.3"
+futures-util = { version = "0.3", features = ["async-await", "sink", "std"] }
 tauri = { version = "1", features = ["shell-open"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 serde_repr = "0.1"
 tokio = { version = "1", features = ["net", "macros"] }
 tokio-stream = "0.1"
-tokio-util = "0.7"
+tokio-tungstenite = "0.21"
+tokio-util = { version = "0.7", features = ["time"] }
 tokio-websockets = { version = "0.8.2", features = [
     "client",
     "rustls-webpki-roots",
@@ -26,6 +29,7 @@ tokio-websockets = { version = "0.8.2", features = [
     "rand",
 ] }
 http = "1"
+url = "2.5"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!
