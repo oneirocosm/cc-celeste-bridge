@@ -2,6 +2,7 @@ use crate::cccb_error::CccbError;
 use crate::queues::ToTcp;
 use futures::stream::SplitStream;
 use futures_util::{StreamExt, TryStreamExt};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use tauri::State;
 use tokio::net::TcpStream;
@@ -54,7 +55,7 @@ pub async fn ws_connect(
 
     let poll_cancel = canceller.clone();
 
-    let tcp_queue = to_tcp.queue.clone();
+    let tcp_tx = to_tcp.tx.clone();
     // start a polling task
     //poll_incoming(&to_tcp, read).await;
     tokio::spawn(async move {
@@ -62,7 +63,7 @@ pub async fn ws_connect(
             _ = poll_cancel.cancelled() => {
                 Err("cancelled".to_string())
             }
-            res = poll_incoming(tcp_queue, read) => {
+            res = poll_incoming(tcp_tx, read) => {
                 res
             }
         }
@@ -91,14 +92,16 @@ async fn connect(token: String) -> Result<CccbWSStream, String> {
 }
 
 async fn poll_incoming(
-    tcp_queue: Arc<Mutex<DelayQueue<String>>>,
+    tcp_queue: Arc<Mutex<Sender<String>>>,
     read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
 ) -> Result<(), String> {
-    let queue_ref = &tcp_queue;
+    let tx_ref = &tcp_queue;
     read.try_for_each(|msg| async move {
-        let queue_copy = queue_ref.clone();
-        let mut queue_lock = queue_copy.lock().await;
-        queue_lock.insert(msg.to_string(), Duration::new(0, 0));
+        let tx_copy = tx_ref.clone();
+        let tx_lock = tx_copy.lock().await;
+        tx_lock
+            .send(msg.to_string())
+            .map_err(|_e| tokio_tungstenite::tungstenite::Error::WriteBufferFull(msg.clone()))?;
         println!("{:?}", msg);
         Ok(())
     })

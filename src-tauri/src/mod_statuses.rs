@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug)]
@@ -31,4 +32,11 @@ pub enum ResponseType {
     EffectRequest,
     Login = 0xF0,
     KeepAlive = 0xFF,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FromServer {
+    pub player_id: String,
+    pub code: String,
 }

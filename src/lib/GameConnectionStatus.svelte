@@ -5,8 +5,8 @@
     let errorTimeout: ReturnType<typeof setTimeout>;
     const noError = "todo";
 
-    async function listen() {
-        let tempMsg = (await invoke("listen", { errorMsg })) as string;
+    async function connectGame() {
+        let tempMsg = (await invoke("tcp_connect", { errorMsg })) as string;
         setErrorMsg(tempMsg, 2000);
     }
 
@@ -26,7 +26,7 @@
         <p></p>
     </div>
     <div class="inner-content-row user-input">
-        <button on:click={listen}> Connect to Game </button>
+        <button on:click={connectGame}> Connect to Game </button>
     </div>
 </div>
 

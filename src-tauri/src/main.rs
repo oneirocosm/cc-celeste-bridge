@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         */
         .manage(WsConnState::default())
-        .manage(ToTcp::default())
+        .manage(ToTcp::new())
         .manage(TcpConnState::default())
         .invoke_handler(tauri::generate_handler![
             greet,
