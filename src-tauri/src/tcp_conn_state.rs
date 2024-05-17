@@ -1,5 +1,6 @@
 use crate::mod_statuses::{FromServer, RequestType};
 use crate::queues::ToTcp;
+use futures::future::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
@@ -38,23 +39,50 @@ pub async fn tcp_connect(
     .await
     .map_err(|e| e.to_string())??;
 
-    let (read_stream, mut write_stream) = conn.into_split();
-
-    let poll_cancel = canceller.clone();
+    let (mut read_stream, mut write_stream) = conn.into_split();
 
     let tcp_rx = to_tcp.rx.clone();
 
-    tokio::spawn(async move {
+    /*
+    let coroutines = vec![
+        check_cancel(poll_cancel),
+        write_to_tcp(tcp_rx, write_stream),
+        poll_from_tcp(read_stream),
+    ];*/
+
+    let write_cancel = canceller.clone();
+
+    let writer = tokio::spawn(async move {
+        tokio::select! {
+            _ = write_cancel.cancelled() => {
+                Err("cancelled".to_string())
+            },
+            res = write_to_tcp(tcp_rx, write_stream) => {
+                res
+            },
+        }
+    });
+
+    let poll_cancel = canceller.clone();
+
+    let poller = tokio::spawn(async move {
         tokio::select! {
             _ = poll_cancel.cancelled() => {
                 Err("cancelled".to_string())
-            }
-            res = write_to_tcp(tcp_rx, write_stream) => {
+            },
+            res = poll_from_tcp(read_stream) => {
                 res
-            }
+            },
         }
+    });
+
+    tokio::select!(
+    res = writer => {
+        res
+    },
+    res = poller => {
+        res
     })
-    .await
     .map_err(|e| e.to_string())?
 }
 
@@ -68,6 +96,11 @@ pub async fn tcp_disconnect(state: State<'_, TcpConnState>) -> Result<(), String
     Ok(())
 }
 
+async fn check_cancel(canceller: CancellationToken) -> Result<(), String> {
+    canceller.cancelled().await;
+    Err("cancelled".to_string())
+}
+
 async fn connect() -> Result<TcpStream, String> {
     let listener = TcpListener::bind("127.0.0.1:58430")
         .await
@@ -77,13 +110,51 @@ async fn connect() -> Result<TcpStream, String> {
     Ok(socket)
 }
 
+async fn handle_data(
+    mut read_stream: OwnedReadHalf,
+    mut write_stream: OwnedWriteHalf,
+    tcp_rx: Arc<Mutex<Receiver<String>>>,
+) -> Result<(), String> {
+    tokio::spawn(async move {
+        tokio::join!(
+            write_to_tcp(tcp_rx, write_stream).fuse(),
+            poll_from_tcp(read_stream),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    println!("done");
+    Ok(())
+}
+
+async fn poll_from_tcp(mut read_stream: OwnedReadHalf) -> Result<(), String> {
+    println!("tcp poll");
+    loop {
+        let mut line = vec![];
+        let result = read_stream.try_read_buf(&mut line);
+        if let Err(e) = result {
+            continue;
+        }
+        let mut buffer = String::from_utf8_lossy(&line);
+
+        println!("received: {}", buffer)
+    }
+}
+
 async fn write_to_tcp(
     tcp_rx: Arc<Mutex<Receiver<String>>>,
     mut write_stream: OwnedWriteHalf,
 ) -> Result<(), String> {
+    println!("tcp write");
     let mut i = 0;
     let rx = tcp_rx.lock().await;
-    while let Ok(msg) = rx.recv() {
+    loop {
+        let msg: String;
+        if let Ok(res_ok) = rx.recv() {
+            msg = res_ok;
+        } else {
+            return Err("tcp error".to_string());
+        }
         println!("{}", msg);
         let info: FromServer = serde_json::from_str(&msg).expect("a");
 
