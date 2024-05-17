@@ -1,8 +1,7 @@
 use crate::mod_statuses::{FromServer, RequestType};
 use crate::queues::ToTcp;
-use futures::future::FutureExt;
 use serde::{Deserialize, Serialize};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use tauri::State;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -39,7 +38,7 @@ pub async fn tcp_connect(
     .await
     .map_err(|e| e.to_string())??;
 
-    let (mut read_stream, mut write_stream) = conn.into_split();
+    let (read_stream, write_stream) = conn.into_split();
 
     let tcp_rx = to_tcp.rx.clone();
 
@@ -96,11 +95,6 @@ pub async fn tcp_disconnect(state: State<'_, TcpConnState>) -> Result<(), String
     Ok(())
 }
 
-async fn check_cancel(canceller: CancellationToken) -> Result<(), String> {
-    canceller.cancelled().await;
-    Err("cancelled".to_string())
-}
-
 async fn connect() -> Result<TcpStream, String> {
     let listener = TcpListener::bind("127.0.0.1:58430")
         .await
@@ -110,34 +104,17 @@ async fn connect() -> Result<TcpStream, String> {
     Ok(socket)
 }
 
-async fn handle_data(
-    mut read_stream: OwnedReadHalf,
-    mut write_stream: OwnedWriteHalf,
-    tcp_rx: Arc<Mutex<Receiver<String>>>,
-) -> Result<(), String> {
-    tokio::spawn(async move {
-        tokio::join!(
-            write_to_tcp(tcp_rx, write_stream).fuse(),
-            poll_from_tcp(read_stream),
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    println!("done");
-    Ok(())
-}
-
-async fn poll_from_tcp(mut read_stream: OwnedReadHalf) -> Result<(), String> {
+async fn poll_from_tcp(read_stream: OwnedReadHalf) -> Result<(), String> {
     println!("tcp poll");
     loop {
-        let mut line = vec![];
-        let result = read_stream.try_read_buf(&mut line);
-        if let Err(e) = result {
+        let mut buffer = vec![];
+        let result = read_stream.try_read_buf(&mut buffer);
+        if let Err(_) = result {
             continue;
         }
-        let mut buffer = String::from_utf8_lossy(&line);
+        let line = String::from_utf8_lossy(&buffer);
 
-        println!("received: {}", buffer)
+        println!("received: {}", line)
     }
 }
 
@@ -174,7 +151,6 @@ async fn write_to_tcp(
         write_stream.flush().await.expect("flush");
         i += 1;
     }
-    Ok(())
 }
 
 #[derive(Default)]

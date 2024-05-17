@@ -1,8 +1,7 @@
-use crate::cccb_error::CccbError;
 use crate::queues::ToTcp;
 use futures::stream::SplitStream;
 use futures_util::{StreamExt, TryStreamExt};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use tauri::State;
 use tokio::net::TcpStream;
@@ -13,8 +12,6 @@ use tokio_tungstenite::{
 };
 use tokio_util::sync::CancellationToken;
 use tokio_util::time::delay_queue::DelayQueue;
-//use tokio_websockets::ClientBuilder;
-//use tokio_websockets::{tls::MaybeTlsStream, WebSocketStream};
 
 pub type CccbWSStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
