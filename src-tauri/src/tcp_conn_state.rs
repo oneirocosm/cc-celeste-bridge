@@ -29,7 +29,6 @@ pub async fn tcp_connect(
     let canceller = CancellationToken::new();
     let conn_cancel = canceller.clone();
     let write_cancel = canceller.clone();
-    let write_cancel2 = canceller.clone();
     let poll_cancel = canceller.clone();
     *ws_cancel = Some(canceller);
     std::mem::drop(ws_cancel);
@@ -56,45 +55,34 @@ pub async fn tcp_connect(
     let tcp_rx = to_tcp.rx.clone();
     let write_requests = requests.clone();
 
-    let writer = tokio::spawn(async move {
-        tokio::select! {
-            _ = write_cancel.cancelled() => {
-                println!("b");
-                Err("cancelled".to_string())
-            },
-            res = write_to_tcp(tcp_rx, write_stream, write_requests) => {
-                res
-            },
-        }
-    });
+    let writer = tokio::spawn(write_to_tcp(
+        tcp_rx,
+        write_stream,
+        write_requests,
+        write_cancel,
+    ));
 
     let ws_tx = to_ws.tx.clone();
     let read_requests = requests.clone();
     let repeat_queue = repeats.repeats.clone();
     let tcp_tx = to_tcp.tx.clone();
 
-    let poller = tokio::spawn(async move {
-        tokio::select! {
-            _ = poll_cancel.cancelled() => {
-                println!("a");
-                Err("cancelled".to_string())
-            },
-            res = poll_from_tcp(read_stream, ws_tx, read_requests, repeat_queue, tcp_tx) => {
-                res
-            },
-        }
-    });
+    let poller = tokio::spawn(poll_from_tcp(
+        read_stream,
+        ws_tx,
+        read_requests,
+        repeat_queue,
+        tcp_tx,
+        poll_cancel,
+    ));
 
-    tokio::select!(
-    res = writer => {
-        println!("c");
-        res
-    },
-    res = poller => {
-        println!("d");
-        res
-    })
-    .map_err(|e| e.to_string())?
+    let (write_out, read_out) = tokio::try_join!(writer, poller).map_err(|e| e.to_string())?;
+    match (write_out, read_out) {
+        (Err(write_err), Err(read_err)) => Err(format!("{}, {}", write_err, read_err)),
+        (Err(write_err), Ok(_)) => Err(write_err),
+        (Ok(_), Err(read_err)) => Err(read_err),
+        (Ok(_), Ok(_)) => Ok(()),
+    }
 }
 
 #[tauri::command]
@@ -122,10 +110,13 @@ async fn poll_from_tcp(
     requests: Arc<Mutex<HashMap<u32, Request>>>,
     repeats: Arc<Mutex<VecDeque<Response>>>,
     tcp_tx: Arc<Mutex<Sender<String>>>,
+    cancel: CancellationToken,
 ) -> Result<(), String> {
-    println!("tcp poll");
     let mut repeat_queue = repeats.lock().await;
     loop {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
         let mut buffer = vec![];
         let result = read_stream.try_read_buf(&mut buffer);
         if let Err(_) = result {
@@ -141,11 +132,8 @@ async fn poll_from_tcp(
             continue;
         }
 
-        println!("received: {}", line);
-
         match (resp.status, resp.t) {
             (EffectResult::Retry, _) => {
-                println!("repeat soon: {:?}", resp.clone());
                 repeat_queue.push_front(resp);
             }
             (_, ResponseType::EffectRequest) => {
@@ -203,24 +191,21 @@ async fn write_to_tcp(
     tcp_rx: Arc<Mutex<Receiver<String>>>,
     mut write_stream: OwnedWriteHalf,
     requests: Arc<Mutex<HashMap<u32, Request>>>,
+    cancel: CancellationToken,
 ) -> Result<(), String> {
-    println!("tcp write");
     let mut i = 0;
     let rx = tcp_rx.lock().await;
     loop {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
         let msg: String;
-        if let Ok(res_ok) = rx.recv() {
+        if let Ok(res_ok) = rx.try_recv() {
             msg = res_ok;
         } else {
-            return Err("tcp error".to_string());
+            continue;
         }
-        println!("{}", msg);
-        let info: FromServer = serde_json::from_str(&msg).map_err(|e| {
-            let a = e.to_string();
-            println!("yes after this is bad {}", a);
-            a
-        })?;
-        println!("yes!");
+        let info: FromServer = serde_json::from_str(&msg).map_err(|e| e.to_string())?;
 
         let target = Target {
             id: info.player_id,
@@ -249,7 +234,6 @@ async fn write_to_tcp(
             .await
             .map_err(|e| e.to_string())?;
         write_stream.flush().await.map_err(|e| e.to_string())?;
-        println!("sent: {}", req);
 
         i += 1;
     }
