@@ -1,3 +1,4 @@
+use crate::mod_statuses::ToServer;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -14,6 +15,21 @@ pub struct ToTcp {
 }
 
 impl ToTcp {
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel();
+        Self {
+            tx: Arc::new(Mutex::new(tx)),
+            rx: Arc::new(Mutex::new(rx)),
+        }
+    }
+}
+
+pub struct ToWs {
+    pub tx: Arc<Mutex<Sender<ToServer>>>,
+    pub rx: Arc<Mutex<Receiver<ToServer>>>,
+}
+
+impl ToWs {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {

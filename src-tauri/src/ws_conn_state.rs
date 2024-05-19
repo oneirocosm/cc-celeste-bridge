@@ -1,17 +1,16 @@
-use crate::queues::ToTcp;
-use futures::stream::SplitStream;
-use futures_util::{StreamExt, TryStreamExt};
-use std::sync::mpsc::Sender;
+use crate::mod_statuses::ToServer;
+use crate::queues::{ToTcp, ToWs};
+use futures::stream::{SplitSink, SplitStream};
+use futures_util::{SinkExt, StreamExt, TryStreamExt};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use tauri::State;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio::time::Duration;
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
 };
 use tokio_util::sync::CancellationToken;
-use tokio_util::time::delay_queue::DelayQueue;
 
 pub type CccbWSStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -20,6 +19,7 @@ pub async fn ws_connect(
     token: String,
     state: State<'_, WsConnState>,
     to_tcp: State<'_, ToTcp>,
+    to_ws: State<'_, ToWs>,
 ) -> Result<(), String> {
     let mut ws_cancel = state.cancel.lock().await;
     if !ws_cancel.is_none() {
@@ -46,7 +46,7 @@ pub async fn ws_connect(
 
     println!("connected");
 
-    let (_, read) = conn.split();
+    let (write, read) = conn.split();
 
     println!("start polling");
 
@@ -55,7 +55,7 @@ pub async fn ws_connect(
     let tcp_tx = to_tcp.tx.clone();
     // start a polling task
     //poll_incoming(&to_tcp, read).await;
-    tokio::spawn(async move {
+    let poller = tokio::spawn(async move {
         tokio::select! {
             _ = poll_cancel.cancelled() => {
                 Err("cancelled".to_string())
@@ -64,8 +64,29 @@ pub async fn ws_connect(
                 res
             }
         }
+    });
+
+    let write_cancel = canceller.clone();
+    let ws_rx = to_ws.rx.clone();
+
+    let writer = tokio::spawn(async move {
+        tokio::select! {
+            _ = write_cancel.cancelled() => {
+                Err("cancelled".to_string())
+            }
+            res = write_to_ws(ws_rx, write) => {
+                res
+            }
+        }
+    });
+
+    tokio::select!(
+    res = writer => {
+        res
+    },
+    res = poller => {
+        res
     })
-    .await
     .map_err(|e| e.to_string())?
 }
 
@@ -106,20 +127,28 @@ async fn poll_incoming(
     .map_err(|e| e.to_string())
 }
 
-/*
-async fn connect(token: String) -> Result<CccbWSStream, String> {
-    let uri = format!("ws://127.0.0.1:3000?token={token}")
-        .parse::<Uri>()
-        .map_err(|e| e.to_string())?;
+async fn write_to_ws(
+    ws_rx: Arc<Mutex<Receiver<ToServer>>>,
+    mut write: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+) -> Result<(), String> {
+    println!("tcp write");
+    let rx = ws_rx.lock().await;
+    loop {
+        let msg: ToServer;
+        if let Ok(res_ok) = rx.recv() {
+            msg = res_ok;
+        } else {
+            return Err("tcp error".to_string());
+        }
+        println!("before send: {:?}", msg);
+        let serialized = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
 
-    let (client, _) = ClientBuilder::from_uri(uri)
-        .connect()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(client)
+        write
+            .send(Message::Text(serialized))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
 }
-*/
 
 #[derive(Default)]
 pub struct WsConnState {

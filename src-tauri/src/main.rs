@@ -15,7 +15,7 @@ mod queues;
 mod tcp_conn_state;
 mod ws_conn_state;
 
-use queues::ToTcp;
+use queues::{ToTcp, ToWs};
 use tcp_conn_state::TcpConnState;
 use ws_conn_state::WsConnState;
 
@@ -29,6 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .manage(WsConnState::default())
         .manage(ToTcp::new())
         .manage(TcpConnState::default())
+        .manage(ToWs::new())
         .invoke_handler(tauri::generate_handler![
             greet,
             mod_tcp_conn::connect,

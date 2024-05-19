@@ -6,8 +6,8 @@
     const noError = "todo";
 
     async function connectGame() {
-        let tempMsg = (await invoke("tcp_connect", { errorMsg })) as string;
-        setErrorMsg(tempMsg, 2000);
+        await invoke("tcp_connect", { errorMsg }).catch((e) => console.log(e));
+        //setErrorMsg(tempMsg, 2000);
     }
 
     async function setErrorMsg(msg: string, timeoutMs: number) {
