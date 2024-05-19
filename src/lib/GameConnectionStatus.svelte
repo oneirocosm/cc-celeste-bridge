@@ -1,13 +1,43 @@
 <script lang="ts">
+    import { listen } from "@tauri-apps/api/event";
+    import { join } from "@tauri-apps/api/path";
     import { invoke } from "@tauri-apps/api/tauri";
 
     let errorMsg = "";
     let errorTimeout: ReturnType<typeof setTimeout>;
+    let connectState = "disconnected";
     const noError = "todo";
 
     async function connectGame() {
-        await invoke("tcp_connect", { errorMsg }).catch((e) => console.log(e));
-        //setErrorMsg(tempMsg, 2000);
+        errorMsg = "";
+        connectState = "connecting";
+        await invoke("tcp_connect", { errorMsg })
+            .then(() => {
+                connectState = "disconnected";
+            })
+            .catch((e) => {
+                connectState = "disconnected";
+                errorMsg = e;
+            });
+    }
+
+    async function disconnectGame() {
+        connectState = "connecting";
+        await invoke("tcp_disconnect", { errorMsg })
+            .then(() => {
+                connectState = "disconnected";
+            })
+            .catch((e) => {
+                connectState = "disconnected";
+                errorMsg = e;
+            });
+    }
+
+    async function connResp() {
+        await listen("tcp_conn", (event) => {
+            console.log(event);
+            connectState = event.payload as string;
+        });
     }
 
     async function setErrorMsg(msg: string, timeoutMs: number) {
@@ -18,15 +48,27 @@
             errorMsg = noError;
         }, timeoutMs);
     }
+
+    connResp();
 </script>
 
-<div class="outer-content-box">
+<div
+    class={connectState === "connected"
+        ? "outer-content-box connect"
+        : "outer-content-box noconnect"}
+>
     <div class="inner-content-row">
         <h2>Game:</h2>
         <p></p>
     </div>
     <div class="inner-content-row user-input">
-        <button on:click={connectGame}> Connect to Game </button>
+        {#if connectState === "disconnected"}
+            <button on:click={connectGame}> Connect to Game </button>
+        {:else if connectState === "connected"}
+            <button on:click={disconnectGame}> Disconnect Game </button>
+        {:else}
+            <button on:click={disconnectGame}> Cancel Connection </button>
+        {/if}
     </div>
 </div>
 
@@ -52,6 +94,13 @@
         border: 0.3rem solid var(--color-moonshot-core-pink);
         padding: 1rem;
         border-radius: 0.5rem;
+    }
+
+    .connect {
         background-color: var(--color-moonshot-extra-blue-dark);
+    }
+
+    .noconnect {
+        background-color: var(--color-moonshot-extra-burgundy);
     }
 </style>

@@ -7,11 +7,11 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
-use tauri::State;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tauri::{AppHandle, Manager, State};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::net::{tcp::OwnedReadHalf, tcp::OwnedWriteHalf, TcpListener};
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 #[tauri::command]
@@ -20,15 +20,19 @@ pub async fn tcp_connect(
     to_tcp: State<'_, ToTcp>,
     to_ws: State<'_, ToWs>,
     repeats: State<'_, RetryQueue>,
+    app: AppHandle,
 ) -> Result<(), String> {
     let mut ws_cancel = state.cancel.lock().await;
     if !ws_cancel.is_none() {
         return Err("already connecting/connected".into());
     }
     let canceller = CancellationToken::new();
-    *ws_cancel = Some(canceller.clone());
-    std::mem::drop(ws_cancel);
     let conn_cancel = canceller.clone();
+    let write_cancel = canceller.clone();
+    let write_cancel2 = canceller.clone();
+    let poll_cancel = canceller.clone();
+    *ws_cancel = Some(canceller);
+    std::mem::drop(ws_cancel);
 
     let conn = tokio::spawn(async move {
         tokio::select! {
@@ -43,24 +47,19 @@ pub async fn tcp_connect(
     .await
     .map_err(|e| e.to_string())??;
 
+    app.emit_all("tcp_conn", "connected")
+        .map_err(|e| e.to_string())?;
+
     let (read_stream, write_stream) = conn.into_split();
-
-    /*
-    let coroutines = vec![
-        check_cancel(poll_cancel),
-        write_to_tcp(tcp_rx, write_stream),
-        poll_from_tcp(read_stream),
-    ];*/
-
     let requests: Arc<Mutex<HashMap<u32, Request>>> = Arc::new(Mutex::new(HashMap::new()));
 
     let tcp_rx = to_tcp.rx.clone();
-    let write_cancel = canceller.clone();
     let write_requests = requests.clone();
 
     let writer = tokio::spawn(async move {
         tokio::select! {
             _ = write_cancel.cancelled() => {
+                println!("b");
                 Err("cancelled".to_string())
             },
             res = write_to_tcp(tcp_rx, write_stream, write_requests) => {
@@ -69,7 +68,6 @@ pub async fn tcp_connect(
         }
     });
 
-    let poll_cancel = canceller.clone();
     let ws_tx = to_ws.tx.clone();
     let read_requests = requests.clone();
     let repeat_queue = repeats.repeats.clone();
@@ -78,6 +76,7 @@ pub async fn tcp_connect(
     let poller = tokio::spawn(async move {
         tokio::select! {
             _ = poll_cancel.cancelled() => {
+                println!("a");
                 Err("cancelled".to_string())
             },
             res = poll_from_tcp(read_stream, ws_tx, read_requests, repeat_queue, tcp_tx) => {
@@ -88,9 +87,11 @@ pub async fn tcp_connect(
 
     tokio::select!(
     res = writer => {
+        println!("c");
         res
     },
     res = poller => {
+        println!("d");
         res
     })
     .map_err(|e| e.to_string())?
