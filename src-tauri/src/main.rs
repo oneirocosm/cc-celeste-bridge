@@ -15,8 +15,12 @@ mod queues;
 mod tcp_conn_state;
 mod ws_conn_state;
 
-use queues::{ToTcp, ToWs};
+use mod_statuses::Response;
+use queues::{RetryQueue, ToTcp, ToWs};
+use std::collections::VecDeque;
+use std::sync::Arc;
 use tcp_conn_state::TcpConnState;
+use tokio::sync::Mutex;
 use ws_conn_state::WsConnState;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,6 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .manage(ToTcp::new())
         .manage(TcpConnState::default())
         .manage(ToWs::new())
+        .manage(RetryQueue::new())
         .invoke_handler(tauri::generate_handler![
             greet,
             mod_tcp_conn::connect,

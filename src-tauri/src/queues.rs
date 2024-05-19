@@ -1,4 +1,5 @@
-use crate::mod_statuses::ToServer;
+use crate::mod_statuses::{Response, ToServer};
+use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -35,6 +36,18 @@ impl ToWs {
         Self {
             tx: Arc::new(Mutex::new(tx)),
             rx: Arc::new(Mutex::new(rx)),
+        }
+    }
+}
+
+pub struct RetryQueue {
+    pub repeats: Arc<Mutex<VecDeque<Response>>>,
+}
+
+impl RetryQueue {
+    pub fn new() -> Self {
+        Self {
+            repeats: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 }

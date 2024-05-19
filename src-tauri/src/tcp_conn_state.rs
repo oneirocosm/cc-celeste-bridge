@@ -1,24 +1,25 @@
 use crate::mod_statuses::{
     EffectResult, FromServer, RequestType, Response, ResponseType, ToServer,
 };
-use crate::queues::{ToTcp, ToWs};
+use crate::queues::{RetryQueue, ToTcp, ToWs};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use tauri::State;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::net::{tcp::OwnedReadHalf, tcp::OwnedWriteHalf, TcpListener};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio_util::sync::CancellationToken;
-use tokio_util::time::delay_queue::DelayQueue;
 
 #[tauri::command]
 pub async fn tcp_connect(
     state: State<'_, TcpConnState>,
     to_tcp: State<'_, ToTcp>,
     to_ws: State<'_, ToWs>,
+    repeats: State<'_, RetryQueue>,
 ) -> Result<(), String> {
     let mut ws_cancel = state.cancel.lock().await;
     if !ws_cancel.is_none() {
@@ -44,8 +45,6 @@ pub async fn tcp_connect(
 
     let (read_stream, write_stream) = conn.into_split();
 
-    let tcp_rx = to_tcp.rx.clone();
-
     /*
     let coroutines = vec![
         check_cancel(poll_cancel),
@@ -55,6 +54,7 @@ pub async fn tcp_connect(
 
     let requests: Arc<Mutex<HashMap<u32, Request>>> = Arc::new(Mutex::new(HashMap::new()));
 
+    let tcp_rx = to_tcp.rx.clone();
     let write_cancel = canceller.clone();
     let write_requests = requests.clone();
 
@@ -70,16 +70,17 @@ pub async fn tcp_connect(
     });
 
     let poll_cancel = canceller.clone();
-
     let ws_tx = to_ws.tx.clone();
     let read_requests = requests.clone();
+    let repeat_queue = repeats.repeats.clone();
+    let tcp_tx = to_tcp.tx.clone();
 
     let poller = tokio::spawn(async move {
         tokio::select! {
             _ = poll_cancel.cancelled() => {
                 Err("cancelled".to_string())
             },
-            res = poll_from_tcp(read_stream, ws_tx, read_requests) => {
+            res = poll_from_tcp(read_stream, ws_tx, read_requests, repeat_queue, tcp_tx) => {
                 res
             },
         }
@@ -118,8 +119,11 @@ async fn poll_from_tcp(
     read_stream: OwnedReadHalf,
     ws_tx: Arc<Mutex<Sender<ToServer>>>,
     requests: Arc<Mutex<HashMap<u32, Request>>>,
+    repeats: Arc<Mutex<VecDeque<Response>>>,
+    tcp_tx: Arc<Mutex<Sender<String>>>,
 ) -> Result<(), String> {
     println!("tcp poll");
+    let mut repeat_queue = repeats.lock().await;
     loop {
         let mut buffer = vec![];
         let result = read_stream.try_read_buf(&mut buffer);
@@ -136,8 +140,13 @@ async fn poll_from_tcp(
             continue;
         }
 
+        println!("received: {}", line);
+
         match (resp.status, resp.t) {
-            (EffectResult::Retry, _) => {}
+            (EffectResult::Retry, _) => {
+                println!("repeat soon: {:?}", resp.clone());
+                repeat_queue.push_front(resp);
+            }
             (_, ResponseType::EffectRequest) => {
                 let mut req_lock = requests.lock().await;
                 let this_req: Request;
@@ -158,10 +167,34 @@ async fn poll_from_tcp(
                 let tx_lock = ws_tx.lock().await;
                 tx_lock.send(to_server).map_err(|e| e.to_string())?;
             }
-            (_, _) => {}
-        }
+            (_, _) => {
+                let response: Response;
+                if let Some(inner_response) = repeat_queue.pop_back() {
+                    response = inner_response;
+                } else {
+                    continue;
+                }
+                let mut req_lock = requests.lock().await;
+                let this_req: Request;
+                if let Some(res_ok) = req_lock.get(&response.id) {
+                    this_req = res_ok.clone();
+                } else {
+                    continue;
+                }
+                req_lock.remove(&resp.id);
+                std::mem::drop(req_lock);
 
-        println!("received: {}", line)
+                let from_server = FromServer {
+                    player_id: this_req.targets.unwrap()[0].id.clone(),
+                    code: this_req.code.unwrap(),
+                };
+
+                if let Ok(retry) = serde_json::to_string(&from_server) {
+                    let tx_lock = tcp_tx.lock().await;
+                    tx_lock.send(retry).map_err(|e| e.to_string())?;
+                }
+            }
+        }
     }
 }
 
@@ -183,7 +216,7 @@ async fn write_to_tcp(
         println!("{}", msg);
         let info: FromServer = serde_json::from_str(&msg).map_err(|e| {
             let a = e.to_string();
-            println!("{}", a);
+            println!("yes after this is bad {}", a);
             a
         })?;
         println!("yes!");
@@ -215,6 +248,7 @@ async fn write_to_tcp(
             .await
             .map_err(|e| e.to_string())?;
         write_stream.flush().await.map_err(|e| e.to_string())?;
+        println!("sent: {}", req);
 
         i += 1;
     }
