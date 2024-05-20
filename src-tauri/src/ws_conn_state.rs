@@ -25,7 +25,11 @@ pub async fn ws_connect(
 ) -> Result<(), String> {
     let out = ws_connect_inner(token, host, state.clone(), to_tcp, to_ws, app).await;
 
+    // backup cancel in case something is missed somehow
     let mut ws_cancel = state.cancel.lock().await;
+    if let Some(canceller) = ws_cancel.clone() {
+        canceller.cancel();
+    }
     *ws_cancel = None;
     out
 }

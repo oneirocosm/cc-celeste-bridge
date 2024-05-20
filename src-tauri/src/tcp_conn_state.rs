@@ -22,6 +22,24 @@ pub async fn tcp_connect(
     repeats: State<'_, RetryQueue>,
     app: AppHandle,
 ) -> Result<(), String> {
+    let out = tcp_connect_inner(state.clone(), to_tcp, to_ws, repeats, app).await;
+
+    // backup cancel in case something is missed somehow
+    let mut tcp_cancel = state.cancel.lock().await;
+    if let Some(canceller) = tcp_cancel.clone() {
+        canceller.cancel();
+    }
+    *tcp_cancel = None;
+    out
+}
+
+async fn tcp_connect_inner(
+    state: State<'_, TcpConnState>,
+    to_tcp: State<'_, ToTcp>,
+    to_ws: State<'_, ToWs>,
+    repeats: State<'_, RetryQueue>,
+    app: AppHandle,
+) -> Result<(), String> {
     let mut ws_cancel = state.cancel.lock().await;
     if !ws_cancel.is_none() {
         return Err("already connecting/connected".into());
@@ -119,13 +137,13 @@ async fn poll_from_tcp(
         }
         let mut buffer = vec![];
         let result = read_stream.try_read_buf(&mut buffer);
-        if let Err(_) = result {
+        if result.is_err() {
             continue;
         }
         let line = String::from_utf8_lossy(&buffer);
 
         let resp: Response;
-        let deserialize = serde_json::from_str(&line.trim_matches('\0')).map_err(|e| e.to_string());
+        let deserialize = serde_json::from_str(line.trim_matches('\0')).map_err(|e| e.to_string());
         if let Ok(res_ok) = deserialize {
             resp = res_ok
         } else {

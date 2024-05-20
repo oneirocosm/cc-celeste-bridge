@@ -54,8 +54,12 @@
             <button on:click={connectGame}> Connect to Game </button>
         {:else if connectState === "connected"}
             <button on:click={disconnectGame}> Disconnect Game </button>
-        {:else}
+        {:else if connectState === "connecting"}
             <button on:click={disconnectGame}> Cancel Connection </button>
+        {:else}
+            <button on:click={disconnectGame} disabled>
+                Disconnecting ...
+            </button>
         {/if}
     </div>
 </div>

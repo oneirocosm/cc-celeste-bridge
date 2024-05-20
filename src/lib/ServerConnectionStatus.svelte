@@ -23,7 +23,7 @@
         let tempMsg = [];
         if (token === "") {
             tempMsg.push(
-                "please enter your vdo url (from your web browser) before connecting",
+                "please enter your gameplay vdo url (from your web browser) before connecting",
             );
         }
         const serverUrlParsed = parse(serverUrl, {});
@@ -95,7 +95,7 @@
                 />
             </div>
             <div class="label-input-box">
-                <p>vdo ninja url</p>
+                <p>vdo ninja url (game)</p>
                 <input
                     id="player-screen-url-input"
                     placeholder="Enter your vdo ninja url"

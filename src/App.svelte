@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Greet from "./lib/Greet.svelte";
   import ServerConnectionStatus from "./lib/ServerConnectionStatus.svelte";
   import GameConnectionStatus from "./lib/GameConnectionStatus.svelte";
 </script>
