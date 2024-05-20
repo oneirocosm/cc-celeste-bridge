@@ -1,30 +1,30 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/tauri";
+    import { listen } from "@tauri-apps/api/event";
     import parse from "url-parse";
 
     let playerScreenUrl = "";
     let errorMsg = "";
-    let errorTimeout: ReturnType<typeof setTimeout>;
     let connectState = "disconnected";
-    const noError = "todo";
 
     async function connectOverlay() {
         const url = parse(playerScreenUrl, true);
         const token = url.query.push ?? "";
         if (token === "") {
-            setErrorMsg(
-                "please enter your vdo url (from your web broser) before connecting",
-                2000,
-            );
+            errorMsg =
+                "please enter your vdo url (from your web browser) before connecting";
             return;
         }
         connectState = "connecting";
 
         await invoke("ws_connect", { token: token })
             .then(() => {
-                connectState = "connected";
+                connectState = "disconnected";
             })
-            .catch((e) => console.log(e));
+            .catch((e) => {
+                connectState = "disconnected";
+                errorMsg = e;
+            });
     }
 
     async function disconnectOverlay() {
@@ -33,19 +33,21 @@
         connectState = "disconnected";
     }
 
-    async function setErrorMsg(msg: string, timeoutMs: number) {
-        clearTimeout(errorTimeout);
-        errorMsg = msg;
-
-        errorTimeout = setTimeout(async () => {
-            errorMsg = noError;
-        }, timeoutMs);
+    async function connResp() {
+        await listen("ws_conn", (event) => {
+            console.log(event);
+            connectState = event.payload as string;
+        });
     }
 
-    onbeforeunload = () => clearTimeout(errorTimeout);
+    connResp();
 </script>
 
-<div class="outer-content-box">
+<div
+    class={connectState === "connected"
+        ? "outer-content-box connect"
+        : "outer-content-box noconnect"}
+>
     <div class="inner-content-row">
         <h2>Server:</h2>
         <p>{errorMsg}</p>
@@ -114,6 +116,13 @@
         border: 0.3rem solid var(--color-moonshot-core-pink);
         padding: 1rem;
         border-radius: 0.5rem;
+    }
+
+    .connect {
         background-color: var(--color-moonshot-extra-blue-dark);
+    }
+
+    .noconnect {
+        background-color: var(--color-moonshot-extra-burgundy);
     }
 </style>

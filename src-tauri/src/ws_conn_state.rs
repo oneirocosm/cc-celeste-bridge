@@ -4,7 +4,7 @@ use futures::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{
@@ -20,12 +20,12 @@ pub async fn ws_connect(
     state: State<'_, WsConnState>,
     to_tcp: State<'_, ToTcp>,
     to_ws: State<'_, ToWs>,
+    app: AppHandle,
 ) -> Result<(), String> {
     let mut ws_cancel = state.cancel.lock().await;
     if !ws_cancel.is_none() {
         return Err("already connecting/connected".into());
     }
-    println!("foo: {}", token);
     let canceller = CancellationToken::new();
     *ws_cancel = Some(canceller.clone());
     std::mem::drop(ws_cancel);
@@ -44,17 +44,19 @@ pub async fn ws_connect(
     .await
     .map_err(|e| e.to_string())??;
 
-    println!("connected");
+    app.emit_all("ws_conn", "connected")
+        .map_err(|e| e.to_string())?;
 
     let (write, read) = conn.split();
 
-    println!("start polling");
+    let write_cancel = canceller.clone();
+    let ws_rx = to_ws.rx.clone();
+
+    let writer = tokio::spawn(write_to_ws(ws_rx, write, write_cancel));
 
     let poll_cancel = canceller.clone();
-
     let tcp_tx = to_tcp.tx.clone();
-    // start a polling task
-    //poll_incoming(&to_tcp, read).await;
+
     let poller = tokio::spawn(async move {
         tokio::select! {
             _ = poll_cancel.cancelled() => {
@@ -66,28 +68,13 @@ pub async fn ws_connect(
         }
     });
 
-    let write_cancel = canceller.clone();
-    let ws_rx = to_ws.rx.clone();
-
-    let writer = tokio::spawn(async move {
-        tokio::select! {
-            _ = write_cancel.cancelled() => {
-                Err("cancelled".to_string())
-            }
-            res = write_to_ws(ws_rx, write) => {
-                res
-            }
-        }
-    });
-
-    tokio::select!(
-    res = writer => {
-        res
-    },
-    res = poller => {
-        res
-    })
-    .map_err(|e| e.to_string())?
+    let (write_out, read_out) = tokio::try_join!(writer, poller).map_err(|e| e.to_string())?;
+    match (write_out, read_out) {
+        (Err(write_err), Err(read_err)) => Err(format!("{}, {}", write_err, read_err)),
+        (Err(write_err), Ok(_)) => Err(write_err),
+        (Ok(_), Err(read_err)) => Err(read_err),
+        (Ok(_), Ok(_)) => Ok(()),
+    }
 }
 
 #[tauri::command]
@@ -101,7 +88,6 @@ pub async fn ws_disconnect(state: State<'_, WsConnState>) -> Result<(), String> 
 }
 
 async fn connect(token: String) -> Result<CccbWSStream, String> {
-    println!("starting connection");
     let uri = url::Url::parse(&format!("ws://127.0.0.1:3000?token={token}"))
         .map_err(|e| e.to_string())?;
 
@@ -120,7 +106,6 @@ async fn poll_incoming(
         tx_lock
             .send(msg.to_string())
             .map_err(|_e| tokio_tungstenite::tungstenite::Error::WriteBufferFull(msg.clone()))?;
-        println!("{:?}", msg);
         Ok(())
     })
     .await
@@ -130,17 +115,19 @@ async fn poll_incoming(
 async fn write_to_ws(
     ws_rx: Arc<Mutex<Receiver<ToServer>>>,
     mut write: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+    cancel: CancellationToken,
 ) -> Result<(), String> {
-    println!("tcp write");
     let rx = ws_rx.lock().await;
     loop {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
         let msg: ToServer;
-        if let Ok(res_ok) = rx.recv() {
+        if let Ok(res_ok) = rx.try_recv() {
             msg = res_ok;
         } else {
-            return Err("tcp error".to_string());
+            continue;
         }
-        println!("before send: {:?}", msg);
         let serialized = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
 
         write

@@ -1,6 +1,5 @@
 <script lang="ts">
     import { listen } from "@tauri-apps/api/event";
-    import { join } from "@tauri-apps/api/path";
     import { invoke } from "@tauri-apps/api/tauri";
 
     let errorMsg = "";
