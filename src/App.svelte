@@ -21,6 +21,7 @@
     text-transform: uppercase;
     transform: skew(-10deg, 0deg);
     color: var(--color-moonshot-core-yellow);
+    min-width: 33rem;
   }
 
   .controls {

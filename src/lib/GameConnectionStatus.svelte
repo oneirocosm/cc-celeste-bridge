@@ -3,9 +3,7 @@
     import { invoke } from "@tauri-apps/api/tauri";
 
     let errorMsg = "";
-    let errorTimeout: ReturnType<typeof setTimeout>;
     let connectState = "disconnected";
-    const noError = "todo";
 
     async function connectGame() {
         errorMsg = "";
@@ -37,15 +35,6 @@
             console.log(event);
             connectState = event.payload as string;
         });
-    }
-
-    async function setErrorMsg(msg: string, timeoutMs: number) {
-        clearTimeout(errorTimeout);
-        errorMsg = msg;
-
-        errorTimeout = setTimeout(async () => {
-            errorMsg = noError;
-        }, timeoutMs);
     }
 
     connResp();
@@ -93,6 +82,7 @@
         border: 0.3rem solid var(--color-moonshot-core-pink);
         padding: 1rem;
         border-radius: 0.5rem;
+        min-width: 22rem;
     }
 
     .connect {

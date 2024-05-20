@@ -17,6 +17,22 @@ pub type CccbWSStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 #[tauri::command]
 pub async fn ws_connect(
     token: String,
+    host: String,
+    state: State<'_, WsConnState>,
+    to_tcp: State<'_, ToTcp>,
+    to_ws: State<'_, ToWs>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let out = ws_connect_inner(token, host, state.clone(), to_tcp, to_ws, app).await;
+
+    let mut ws_cancel = state.cancel.lock().await;
+    *ws_cancel = None;
+    out
+}
+
+async fn ws_connect_inner(
+    token: String,
+    host: String,
     state: State<'_, WsConnState>,
     to_tcp: State<'_, ToTcp>,
     to_ws: State<'_, ToWs>,
@@ -36,7 +52,7 @@ pub async fn ws_connect(
             _ = conn_cancel.cancelled() => {
                 Err("cancelled".to_string())
             }
-            conn = connect(token) => {
+            conn = connect(token, host) => {
                 conn
             }
         }
@@ -87,9 +103,8 @@ pub async fn ws_disconnect(state: State<'_, WsConnState>) -> Result<(), String> 
     Ok(())
 }
 
-async fn connect(token: String) -> Result<CccbWSStream, String> {
-    let uri = url::Url::parse(&format!("ws://127.0.0.1:3000?token={token}"))
-        .map_err(|e| e.to_string())?;
+async fn connect(token: String, host: String) -> Result<CccbWSStream, String> {
+    let uri = url::Url::parse(&format!("ws:{host}?token={token}")).map_err(|e| e.to_string())?;
 
     let (client, _) = connect_async(uri).await.map_err(|e| e.to_string())?;
     Ok(client)
