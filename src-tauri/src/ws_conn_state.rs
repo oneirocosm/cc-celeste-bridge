@@ -108,8 +108,7 @@ pub async fn ws_disconnect(state: State<'_, WsConnState>) -> Result<(), String> 
 }
 
 async fn connect(token: String, host: String) -> Result<CccbWSStream, String> {
-    let uri = url::Url::parse(&format!("ws:{host}?token={token}")).map_err(|e| e.to_string())?;
-
+    let uri = url::Url::parse(&format!("{host}?token={token}")).map_err(|e| e.to_string())?;
     let (client, _) = connect_async(uri).await.map_err(|e| e.to_string())?;
     Ok(client)
 }

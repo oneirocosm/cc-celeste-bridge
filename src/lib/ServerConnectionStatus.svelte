@@ -28,7 +28,6 @@
         }
         const serverUrlParsed = parse(serverUrl, {});
         const host = serverUrlParsed.host ?? "";
-        console.log(host);
         if (host === "") {
             tempMsg.push(
                 "please enter the server url (ask the stream host) before connecting",
@@ -40,7 +39,7 @@
         }
 
         connectState = "connecting";
-        await invoke("ws_connect", { token: token, host: host })
+        await invoke("ws_connect", { token: token, host: serverUrlParsed.href })
             .then(() => {
                 connectState = "disconnected";
             })
